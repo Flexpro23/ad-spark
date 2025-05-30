@@ -1,45 +1,159 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Sparkles, ArrowLeft, Upload, X, ImageIcon } from "lucide-react"
+import { useAuthContext } from "@/components/AuthProvider"
+import { useFirestore } from "@/hooks/useFirestore"
+import { useStorage } from "@/hooks/useStorage"
+import { toast } from "sonner"
+
+interface UploadedFile {
+  id: string;
+  name: string;
+  url: string;
+  type: string;
+}
 
 export default function AssetsPage() {
-  const [uploadedFiles, setUploadedFiles] = useState([])
-  const [isDragging, setIsDragging] = useState(false)
+  const { user } = useAuthContext();
+  const { getProject, updateProject } = useFirestore();
+  const { uploadProjectAssets, uploading, uploadProgress } = useStorage();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectId = searchParams?.get('projectId');
 
-  const handleFileUpload = (files) => {
-    const newFiles = Array.from(files).map((file) => ({
-      id: Date.now() + Math.random(),
-      name: file.name,
-      url: URL.createObjectURL(file),
-      type: file.type,
-    }))
-    setUploadedFiles((prev) => [...prev, ...newFiles])
+  const [project, setProject] = useState<any>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) {
+      router.push('/');
+      return;
+    }
+
+    if (!projectId) {
+      toast.error("No project ID found");
+      router.push('/dashboard');
+      return;
+    }
+
+    const fetchProject = async () => {
+      const { project: projectData, error } = await getProject(projectId);
+      if (error) {
+        toast.error("Failed to load project");
+        router.push('/dashboard');
+      } else {
+        setProject(projectData);
+        // Load existing assets if any
+        if (projectData?.assets) {
+          const existingFiles = projectData.assets.map((url: string, index: number) => ({
+            id: `existing-${index}`,
+            name: `Asset ${index + 1}`,
+            url,
+            type: 'image/*'
+          }));
+          setUploadedFiles(existingFiles);
+        }
+      }
+      setIsLoading(false);
+    };
+
+    fetchProject();
+  }, [user, projectId, getProject, router]);
+
+  const handleFileUpload = async (files: FileList) => {
+    if (!projectId || !user) return;
+
+    setIsLoading(true);
+    const fileArray = Array.from(files);
+    
+    try {
+      const uploadResults = await uploadProjectAssets(fileArray, projectId, user.uid);
+      
+      const successfulUploads = uploadResults.filter(result => result.url);
+      const newFiles: UploadedFile[] = successfulUploads.map((result, index) => ({
+        id: `${Date.now()}-${index}`,
+        name: result.file,
+        url: result.url!,
+        type: fileArray[index].type,
+      }));
+
+      const updatedFiles = [...uploadedFiles, ...newFiles];
+      setUploadedFiles(updatedFiles);
+
+      // Update project with new asset URLs
+      const assetUrls = updatedFiles.map(file => file.url);
+      await updateProject(projectId, { assets: assetUrls });
+
+      toast.success(`Successfully uploaded ${successfulUploads.length} files`);
+    } catch (error) {
+      toast.error("Failed to upload files");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = e.dataTransfer.files;
+    handleFileUpload(files);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const removeFile = (id: string) => {
+    const updatedFiles = uploadedFiles.filter((file) => file.id !== id);
+    setUploadedFiles(updatedFiles);
+    
+    // Update project assets
+    if (projectId) {
+      const assetUrls = updatedFiles.map(file => file.url);
+      updateProject(projectId, { assets: assetUrls });
+    }
+  };
+
+  const handleContinue = async () => {
+    if (!projectId) return;
+
+    // Update project status
+    await updateProject(projectId, { status: "in-progress" });
+    router.push(`/create/scenes?projectId=${projectId}`);
+  };
+
+  if (!user) {
+    return null;
   }
 
-  const handleDrop = (e) => {
-    e.preventDefault()
-    setIsDragging(false)
-    const files = e.dataTransfer.files
-    handleFileUpload(files)
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="text-slate-300">Loading project...</div>
+      </div>
+    );
   }
 
-  const handleDragOver = (e) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }
-
-  const handleDragLeave = (e) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }
-
-  const removeFile = (id) => {
-    setUploadedFiles((prev) => prev.filter((file) => file.id !== id))
+  if (!project) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="text-slate-300">Project not found</div>
+      </div>
+    );
   }
 
   return (
@@ -68,14 +182,10 @@ export default function AssetsPage() {
         {/* Finalized Idea Display */}
         <Card className="bg-slate-800 border-slate-700 mb-8">
           <CardHeader>
-            <CardTitle>Your Finalized Ad Idea</CardTitle>
+            <CardTitle>{project.title}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-slate-300">
-              Create a dynamic video ad for our new eco-friendly water bottle targeting health-conscious millennials.
-              The ad should emphasize sustainability, convenience, and style. Key message: "Stay hydrated, stay
-              sustainable." Call to action: "Order now and get 20% off your first purchase."
-            </p>
+            <p className="text-slate-300">{project.description}</p>
           </CardContent>
         </Card>
 
@@ -103,13 +213,20 @@ export default function AssetsPage() {
                 type="file"
                 multiple
                 accept="image/*"
-                onChange={(e) => handleFileUpload(e.target.files)}
+                onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
                 className="hidden"
                 id="file-upload"
+                disabled={uploading}
               />
               <label htmlFor="file-upload">
-                <Button className="bg-blue-600 hover:bg-blue-700" asChild>
-                  <span>Browse Files</span>
+                <Button 
+                  className="bg-blue-600 hover:bg-blue-700" 
+                  asChild
+                  disabled={uploading}
+                >
+                  <span>
+                    {uploading ? `Uploading... ${Math.round(uploadProgress)}%` : "Browse Files"}
+                  </span>
                 </Button>
               </label>
             </div>
@@ -120,7 +237,7 @@ export default function AssetsPage() {
         {uploadedFiles.length > 0 && (
           <Card className="bg-slate-800 border-slate-700 mb-8">
             <CardHeader>
-              <CardTitle>Uploaded Assets</CardTitle>
+              <CardTitle>Uploaded Assets ({uploadedFiles.length})</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -129,7 +246,7 @@ export default function AssetsPage() {
                     <div className="aspect-square bg-slate-700 rounded-lg overflow-hidden">
                       {file.type.startsWith("image/") ? (
                         <img
-                          src={file.url || "/placeholder.svg"}
+                          src={file.url}
                           alt={file.name}
                           className="w-full h-full object-cover"
                         />
@@ -155,19 +272,21 @@ export default function AssetsPage() {
 
         {/* Action Buttons */}
         <div className="flex justify-between">
-          <Link href="/create/idea">
+          <Link href="/dashboard">
             <Button variant="outline" className="border-slate-600 text-slate-300">
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Idea
+              Back to Dashboard
             </Button>
           </Link>
 
-          <Link href="/create/scenes">
-            <Button className="bg-blue-600 hover:bg-blue-700">
-              <Sparkles className="mr-2 h-4 w-4" />
-              Generate Scenes from Idea & Assets
-            </Button>
-          </Link>
+          <Button 
+            className="bg-blue-600 hover:bg-blue-700"
+            onClick={handleContinue}
+            disabled={uploading}
+          >
+            <Sparkles className="mr-2 h-4 w-4" />
+            Generate Scenes from Project
+          </Button>
         </div>
       </div>
     </div>
