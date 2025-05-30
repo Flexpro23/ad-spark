@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -13,7 +13,7 @@ import { useFirestore, Scene, Project } from "@/hooks/useFirestore"
 import { useGemini } from "@/hooks/useGemini"
 import { toast } from "sonner"
 
-export default function ScenesPage() {
+function ScenesContent() {
   const { user } = useAuthContext();
   const { getProject, updateProject } = useFirestore();
   const { generateChatResponse, loading: geminiLoading } = useGemini();
@@ -380,5 +380,21 @@ Project Details:
           </div>
       </div>
     </div>
+  )
+}
+
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="text-slate-300">Loading...</div>
+    </div>
+  );
+}
+
+export default function ScenesPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <ScenesContent />
+    </Suspense>
   )
 }

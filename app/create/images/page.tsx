@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -29,7 +29,7 @@ interface ImageGenerationResponse {
   errors?: string[];
 }
 
-export default function ImagesPage() {
+function ImagesContent() {
   const { user } = useAuthContext();
   const { getProject, updateProject } = useFirestore();
   const router = useRouter();
@@ -442,5 +442,21 @@ export default function ImagesPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="text-slate-300">Loading...</div>
+    </div>
+  );
+}
+
+export default function ImagesPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <ImagesContent />
+    </Suspense>
   )
 } 

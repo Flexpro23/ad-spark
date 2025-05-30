@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -19,7 +19,7 @@ interface UploadedFile {
   type: string;
 }
 
-export default function AssetsPage() {
+function AssetsContent() {
   const { user } = useAuthContext();
   const { getProject, updateProject } = useFirestore();
   const { uploadProjectAssets, uploading, uploadProgress } = useStorage();
@@ -290,5 +290,21 @@ export default function AssetsPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="text-slate-300">Loading...</div>
+    </div>
+  );
+}
+
+export default function AssetsPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <AssetsContent />
+    </Suspense>
   )
 }
