@@ -37,7 +37,11 @@ async function generateImageForScene(
     // Initialize Google Auth for service account authentication
     const auth = new GoogleAuth({
       scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-      // If GOOGLE_APPLICATION_CREDENTIALS is set, it will use that file
+      // Use service account key from environment variable for Vercel deployment
+      ...(process.env.GOOGLE_SERVICE_ACCOUNT_KEY && {
+        credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY)
+      }),
+      // If GOOGLE_APPLICATION_CREDENTIALS is set (local development), it will use that file
       // Otherwise, it will try to use default application credentials
     });
 
